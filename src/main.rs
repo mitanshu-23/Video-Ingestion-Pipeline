@@ -2,6 +2,7 @@ use crate::routes::get_all_routes;
 mod healthcheck;
 mod routes;
 mod video_upload;
+mod utils;
 
 #[tokio::main]
 async fn main() {
