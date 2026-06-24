@@ -1,6 +1,6 @@
 /// A tiny ID generator — swap this out for uuid::Uuid::new_v4() if you add
 /// the uuid crate later. For now it uses timestamp + random suffix via std.
-pub fn new_mime_id() -> String {
+pub fn new_mime_id(_name: Option<&str>) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
     // xor-shift for the random part — no extra deps needed
@@ -8,7 +8,7 @@ pub fn new_mime_id() -> String {
     x ^= x << 13;
     x ^= x >> 7;
     x ^= x << 17;
-    format!("{ts:016x}{x:016x}")
+    format!("{ts:016x}{x:016x}") // example: "0000017f3b2c4d5e00000000deadbeef"
 }
 
 /// Maps common MIME types to file extensions.

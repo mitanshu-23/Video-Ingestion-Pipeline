@@ -1,8 +1,7 @@
-use crate::routes::get_all_routes;
 mod healthcheck;
 mod routes;
-mod video_upload;
 mod utils;
+mod video_upload;
 
 #[tokio::main]
 async fn main() {
@@ -14,7 +13,7 @@ async fn main() {
     log::info!("Welcome to the Video Ingestion Pipeline! v1.0.0");
 
     // Start Axum Server here
-    let app = get_all_routes();
+    let app = routes::get_all_routes();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
     log::info!("Starting server at http://{}", listener.local_addr().unwrap());

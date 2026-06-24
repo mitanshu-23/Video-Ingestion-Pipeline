@@ -1,0 +1,6 @@
+1) Basic HTTP Tranfer
+-> Is it raw binary data or is it encoded in some way?
+2) Multipart Form Data
+-> How does it work and when to use it?
+-> How file transfer is different from basic HTTP transfer?
+-> What is x-www-form-urlencoded and how does it differ from multipart/form-data?
