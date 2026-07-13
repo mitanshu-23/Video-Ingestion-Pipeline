@@ -35,6 +35,4 @@ pkg/
 *.tmp
 *.swp
 
-.gitignore
-
-./uploads
+uploads/
