@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Ingestion · Range Stream Viewer</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #8b93a3;
+      --accent: #5b8cff;
+      --accent-2: #3b6ef0;
+      --ok: #3ecf8e;
+      --err: #ff6b6b;
+      --warn: #f0b23b;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 0 0 14px; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    select { appearance: none; cursor: pointer; }
+    .field + .field { margin-top: 14px; }
+    .row { display: flex; gap: 12px; }
+    .row > .field { flex: 1; margin-top: 0; }
+    .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    code { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    button.go, button.alt {
+      width: 100%;
+      margin-top: 18px;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    button.go { background: var(--accent-2); color: #fff; }
+    button.go:hover { background: var(--accent); }
+    button.alt { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    button.alt:hover { border-color: var(--accent); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    .stage {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 220px;
+      overflow: hidden;
+    }
+    video { max-width: 100%; max-height: 70vh; border-radius: 8px; display: block; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .meta .v { font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+
+    .bar { height: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; margin-top: 14px; display: none; }
+    .bar.show { display: block; }
+    .bar > i { display: block; height: 100%; width: 0; background: var(--accent-2); transition: width .1s; }
+
+    .status { display: none; margin-top: 16px; }
+    .status.show { display: block; }
+    .status .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 8px; }
+    .status .badge.ok   { background: rgba(62,207,142,.15); color: var(--ok); }
+    .status .badge.err  { background: rgba(255,107,107,.15); color: var(--err); }
+    .status .badge.warn { background: rgba(240,178,59,.15);  color: var(--warn); }
+    .status .badge.load { background: rgba(91,140,255,.15);  color: var(--accent); }
+    pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Video Ingestion · Range Stream Viewer</h1>
+    <p class="sub">
+      Drive the <code>POST /video/rangereq/stream/v1</code> flow. First the <b>init</b> request reports the total size and
+      whether the file accepts ranges; then the player pulls the file in <code>Range: bytes=start-end</code> windows,
+      each answered with <code>206 Partial Content</code>, and stitches them back into a playable video.
+      Prefer whole-file fetch? <a href="stream.html" style="color:var(--accent)">Go to the basic Stream Viewer →</a>
+    </p>
+
+    <!-- ── Shared target ─────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="field">
+        <label for="base">API base URL</label>
+        <input id="base" type="text" value="http://localhost:3000" placeholder="(blank = same origin)" />
+        <p class="note">
+          Leave blank when this page is served by the axum server itself. Keep <code>http://localhost:3000</code> if you
+          open this file standalone. Cross-origin, the browser only lets JS read <code>Content-Length</code>,
+          <code>Content-Range</code> and <code>Accept-Ranges</code> when the server lists them in
+          <code>Access-Control-Expose-Headers</code>.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="uploadType">Upload type <span style="opacity:.7">(the sub-folder under <code>./uploads</code>)</span></label>
+        <select id="uploadType">
+          <option value="basic">basic</option>
+          <option value="multipart">multipart</option>
+          <option value="stream">stream</option>
+          <option value="multipart_stream">multipart_stream</option>
+          <option value="chunk">chunk (reassembled → final_data)</option>
+          <option value="resumable">resumable (reassembled → final_data)</option>
+        </select>
+        <p class="note">Sent as the <code>uploadType</code> query param. <code>chunk</code>/<code>resumable</code> resolve to their <code>final_data</code> sub-folder server-side.</p>
+      </div>
+
+      <div class="field">
+        <label for="fileName">File name</label>
+        <input id="fileName" type="text" placeholder="e.g. 18be72f5b9d605c1436346a166619361.mp4" />
+        <p class="note">Sent as the <code>fileName</code> query param. Range streaming only makes sense for video files.</p>
+      </div>
+    </div>
+
+    <!-- ── Step 1: init probe ────────────────────────────────────────── -->
+    <div class="card">
+      <h2>1 · Init request <span style="color:var(--muted);font-weight:400">— probe size &amp; range support</span></h2>
+      <p class="note" style="margin-top:0">
+        <code>POST {base}/video/rangereq/init/stream/v1?fileName=…&amp;uploadType=…</code> with no body. The server replies
+        <code>200 OK</code> carrying <code>Content-Type</code>, <code>X-Content-Length</code> (the file size — a custom
+        header, since the tiny <code>"OK"</code> body owns the real <code>Content-Length</code>) and
+        <code>Accept-Ranges: bytes</code> — everything the player needs to plan its range windows.
+      </p>
+      <button id="init" class="go" type="button">Run init request</button>
+      <div id="initStatus" class="status">
+        <span id="initBadge" class="badge"></span>
+        <pre id="initOut"></pre>
+      </div>
+    </div>
+
+    <!-- ── Step 2: single range probe ────────────────────────────────── -->
+    <div class="card">
+      <h2>2 · Single range probe <span style="color:var(--muted);font-weight:400">— test one 206 response</span></h2>
+      <p class="note" style="margin-top:0">
+        Fire one <code>Range: bytes=start-end</code> request and inspect the raw response — handy while you build the
+        byte-serving half of the endpoint. Expect <code>206 Partial Content</code> with a <code>Content-Range</code> header.
+      </p>
+      <div class="row" style="margin-top:14px">
+        <div class="field">
+          <label for="rStart">Range start (byte)</label>
+          <input id="rStart" type="number" value="0" min="0" />
+        </div>
+        <div class="field">
+          <label for="rEnd">Range end (byte, inclusive)</label>
+          <input id="rEnd" type="number" value="1048575" min="0" />
+        </div>
+      </div>
+      <button id="probe" class="alt" type="button">Send range request</button>
+      <div id="probeStatus" class="status">
+        <span id="probeBadge" class="badge"></span>
+        <pre id="probeOut"></pre>
+      </div>
+    </div>
+
+    <!-- ── Step 3: stream via ranges & play ──────────────────────────── -->
+    <div class="card">
+      <h2>3 · Stream via ranges &amp; play <span style="color:var(--muted);font-weight:400">— assemble &amp; render</span></h2>
+      <p class="note" style="margin-top:0">
+        Loops <code>Range</code> windows across the whole file (using the length from step 1), collects every
+        <code>206</code> body in order, concatenates them into one <code>Blob</code>, and plays it. Works with a plain
+        (non-fragmented) MP4 because the full file is reassembled client-side before playback.
+      </p>
+      <div class="field" style="margin-top:14px">
+        <label for="window">Window size (bytes per range request)</label>
+        <input id="window" type="number" value="1048576" min="65536" step="65536" />
+        <p class="note">Default 1&nbsp;MiB. Smaller = more requests (finer progress); larger = fewer round-trips.</p>
+      </div>
+      <button id="stream" class="go" type="button">Stream &amp; play</button>
+      <div class="bar" id="bar"><i id="barFill"></i></div>
+      <div id="streamStatus" class="status">
+        <span id="streamBadge" class="badge"></span>
+        <pre id="streamOut"></pre>
+      </div>
+
+      <hr class="divider" />
+      <div class="stage" id="stage"><span style="color:var(--muted);font-size:13px">no video loaded</span></div>
+      <div class="meta">
+        <span>name <span class="v" id="v-name">—</span></span>
+        <span>type <span class="v" id="v-type">—</span></span>
+        <span>size <span class="v" id="v-size">—</span></span>
+        <span>requests <span class="v" id="v-reqs">—</span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    // Keep a handle to the last object URL so we can revoke it and not leak
+    // memory each time a new file is displayed.
+    let currentObjectUrl = null;
+
+    const fmtBytes = (n) => {
+      if (n == null || isNaN(n)) return "—";
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1024 / 1024).toFixed(2) + " MB";
+    };
+
+    // Build endpoint URLs with the shared query params. camelCase keys match
+    // the server's #[serde(rename_all = "camelCase")] on VideoStreamRequest, so
+    // Query<VideoStreamRequest> deserializes fileName / uploadType directly.
+    // Init and byte-serving are two separate routes.
+    const qsParams = () =>
+      new URLSearchParams({
+        fileName: $("fileName").value.trim(),
+        uploadType: $("uploadType").value,
+      }).toString();
+    const baseUrl = () => $("base").value.trim().replace(/\/$/, "");
+    const initEndpoint = () => baseUrl() + "/video/rangereq/init/stream/v1?" + qsParams();
+    const endpoint = () => baseUrl() + "/video/rangereq/stream/v1?" + qsParams();
+
+    const requireFile = (setStatus) => {
+      if (!$("fileName").value.trim()) {
+        setStatus("err", "✗ missing file name", "Enter the file name first.");
+        return false;
+      }
+      return true;
+    };
+
+    // Small status-panel factory so each tool writes to its own block.
+    const statusFor = (prefix) => (kind, badge, text) => {
+      $(prefix + "Status").classList.add("show");
+      $(prefix + "Badge").className = "badge " + kind;
+      $(prefix + "Badge").textContent = badge;
+      $(prefix + "Out").textContent = text || "";
+    };
+    const setInit   = statusFor("init");
+    const setProbe  = statusFor("probe");
+    const setStream = statusFor("stream");
+
+    // Dump the response headers we care about for the range flow.
+    const headerLines = (res) => {
+      const keys = ["content-type", "content-length", "x-content-length", "content-range", "accept-ranges"];
+      return keys
+        .map((k) => [k, res.headers.get(k)])
+        .filter(([, v]) => v != null)
+        .map(([k, v]) => k + ": " + v)
+        .join("\n");
+    };
+
+    // ── 1 · init request ────────────────────────────────────────────
+    $("init").addEventListener("click", async () => {
+      if (!requireFile(setInit)) return;
+      $("init").disabled = true;
+      setInit("load", "… loading", "POST " + initEndpoint());
+      try {
+        const res = await fetch(initEndpoint(), { method: "POST" });
+        const hdrs = headerLines(res);
+        if (!res.ok) {
+          setInit("err", "✗ " + res.status, (await res.text()) || "(empty)");
+          return;
+        }
+        // File size is advertised in X-Content-Length (the body is just "OK", so
+        // the real Content-Length is 2).
+        const len = res.headers.get("x-content-length");
+        setInit(
+          "ok",
+          "✓ " + res.status + " OK",
+          (hdrs || "(no readable headers — check Access-Control-Expose-Headers cross-origin)") +
+            (len ? "\n\ntotal size: " + fmtBytes(Number(len)) : "")
+        );
+      } catch (e) {
+        setInit("err", "✗ failed", "Network/CORS error — request never reached the server.\n\n" + (e?.message || e));
+      } finally {
+        $("init").disabled = false;
+      }
+    });
+
+    // ── 2 · single range probe ──────────────────────────────────────
+    $("probe").addEventListener("click", async () => {
+      if (!requireFile(setProbe)) return;
+      const start = Number($("rStart").value);
+      const end = Number($("rEnd").value);
+      if (isNaN(start) || isNaN(end) || start < 0 || end < start) {
+        setProbe("err", "✗ bad range", "Need 0 ≤ start ≤ end.");
+        return;
+      }
+      const rangeHdr = `bytes=${start}-${end}`;
+      $("probe").disabled = true;
+      setProbe("load", "… loading", "POST " + endpoint() + "\nRange: " + rangeHdr);
+      try {
+        const res = await fetch(endpoint(), { method: "POST", headers: { Range: rangeHdr } });
+        const buf = await res.arrayBuffer();
+        const kind = res.status === 206 ? "ok" : res.status < 400 ? "warn" : "err";
+        const badge =
+          res.status === 206
+            ? "✓ 206 Partial Content"
+            : res.status < 400
+            ? "⚠ " + res.status + " (expected 206)"
+            : "✗ " + res.status;
+        setProbe(
+          kind,
+          badge,
+          headerLines(res) +
+            "\n\nrequested : " + rangeHdr +
+            "\nreceived  : " + buf.byteLength + " bytes (" + fmtBytes(buf.byteLength) + ")" +
+            (res.status !== 206
+              ? "\n\nRange serving not wired up yet — once the endpoint honours the Range header and\nreplies 206 with a Content-Range, this will report the served window."
+              : "")
+        );
+      } catch (e) {
+        setProbe("err", "✗ failed", "Network/CORS error.\n\n" + (e?.message || e));
+      } finally {
+        $("probe").disabled = false;
+      }
+    });
+
+    // ── 3 · stream via ranges & play ────────────────────────────────
+    $("stream").addEventListener("click", async () => {
+      if (!requireFile(setStream)) return;
+      const windowSize = Math.max(65536, Number($("window").value) || 1048576);
+
+      $("stream").disabled = true;
+      $("bar").classList.add("show");
+      $("barFill").style.width = "0";
+      setStream("load", "… init", "Fetching total size via init request…");
+
+      try {
+        // Step A: init to learn the total length + content type.
+        const init = await fetch(initEndpoint(), { method: "POST" });
+        if (!init.ok) {
+          setStream("err", "✗ init " + init.status, (await init.text()) || "(empty)");
+          return;
+        }
+        const total = Number(init.headers.get("x-content-length"));
+        const contentType = init.headers.get("content-type") || "video/mp4";
+        if (!total || isNaN(total)) {
+          setStream(
+            "err",
+            "✗ no X-Content-Length",
+            "Init gave no readable X-Content-Length. Cross-origin, expose it via\nAccess-Control-Expose-Headers, or serve this page from the axum server."
+          );
+          return;
+        }
+
+        // Step B: loop range windows, collecting each 206 body in order.
+        const parts = [];
+        let received = 0;
+        let requests = 0;
+        for (let start = 0; start < total; start += windowSize) {
+          const end = Math.min(start + windowSize - 1, total - 1);
+          const rangeHdr = `bytes=${start}-${end}`;
+          const res = await fetch(endpoint(), { method: "POST", headers: { Range: rangeHdr } });
+          requests++;
+
+          if (res.status !== 206) {
+            // Backend doesn't serve partial content yet (or errored).
+            const body = res.status < 400 ? "" : "\n\n" + ((await res.text()) || "");
+            setStream(
+              "warn",
+              "⚠ " + res.status + " (expected 206)",
+              "Range " + rangeHdr + " returned " + res.status + ", not 206 Partial Content.\n" +
+                "The byte-serving half of /video/rangereq/stream/v1 isn't implemented yet —\n" +
+                "once it honours the Range header this player will assemble and play." + body
+            );
+            return;
+          }
+
+          const buf = await res.arrayBuffer();
+          parts.push(buf);
+          received += buf.byteLength;
+          $("barFill").style.width = Math.min(100, (received / total) * 100).toFixed(1) + "%";
+          setStream("load", "… streaming", `Fetched ${fmtBytes(received)} / ${fmtBytes(total)} · ${requests} range request(s)`);
+        }
+
+        // Step C: stitch the windows into one Blob and play it.
+        const blob = new Blob(parts, { type: contentType });
+        if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = URL.createObjectURL(blob);
+        renderVideo(currentObjectUrl, $("fileName").value.trim(), contentType, blob.size, requests);
+
+        setStream("ok", "✓ done", `Assembled ${fmtBytes(blob.size)} from ${requests} range request(s) · ${contentType}`);
+      } catch (e) {
+        setStream("err", "✗ failed", "Network/CORS error during range streaming.\n\n" + (e?.message || e));
+      } finally {
+        $("stream").disabled = false;
+      }
+    });
+
+    function renderVideo(url, name, type, size, requests) {
+      const stage = $("stage");
+      stage.innerHTML = "";
+      const el = document.createElement("video");
+      el.src = url;
+      el.controls = true;
+      el.playsInline = true;
+      stage.appendChild(el);
+
+      $("v-name").textContent = name;
+      $("v-type").textContent = type;
+      $("v-size").textContent = fmtBytes(size);
+      $("v-reqs").textContent = requests;
+    }
+  </script>
+</body>
+</html>

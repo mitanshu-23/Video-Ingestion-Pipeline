@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Ingestion · Stream Viewer</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #8b93a3;
+      --accent: #5b8cff;
+      --accent-2: #3b6ef0;
+      --ok: #3ecf8e;
+      --err: #ff6b6b;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"], select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    select { appearance: none; cursor: pointer; }
+    .field + .field { margin-top: 14px; }
+    .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    code { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    button.go {
+      width: 100%;
+      margin-top: 18px;
+      background: var(--accent-2);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    button.go:hover { background: var(--accent); }
+    button.go:disabled { opacity: .45; cursor: not-allowed; }
+
+    .viewer { display: none; }
+    .viewer.show { display: block; }
+    .viewer .stage {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 220px;
+      overflow: hidden;
+    }
+    .viewer img,
+    .viewer video {
+      max-width: 100%;
+      max-height: 70vh;
+      border-radius: 8px;
+      display: block;
+    }
+    .viewer iframe {
+      width: 100%;
+      height: 70vh;
+      border: none;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .meta .v { font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+
+    .status { display: none; margin-top: 16px; }
+    .status.show { display: block; }
+    .status .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 8px; }
+    .status .badge.ok { background: rgba(62,207,142,.15); color: var(--ok); }
+    .status .badge.err { background: rgba(255,107,107,.15); color: var(--err); }
+    .status .badge.load { background: rgba(91,140,255,.15); color: var(--accent); }
+    pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Video Ingestion · Stream Viewer</h1>
+    <p class="sub">Fetch an uploaded file back from the axum server and display it in the browser — images render inline, videos play, PDFs open in a frame. Need to upload one first? <a href="index.html" style="color:var(--accent)">Go to the Upload Tester →</a> · Want seekable, range-based playback? <a href="range_stream.html" style="color:var(--accent)">Range Stream Viewer →</a></p>
+
+    <div class="card">
+      <div class="field">
+        <label for="base">API base URL</label>
+        <input id="base" type="text" value="http://localhost:3000" placeholder="(blank = same origin)" />
+        <p class="note">Leave blank when this page is served by the axum server itself. Keep <code>http://localhost:3000</code> if you open this file standalone (the server sends permissive CORS headers).</p>
+      </div>
+
+      <div class="field">
+        <label for="uploadType">Upload type <span style="opacity:.7">(the sub-folder under <code>./uploads</code>)</span></label>
+        <select id="uploadType">
+          <option value="basic">basic</option>
+          <option value="multipart">multipart</option>
+          <option value="stream">stream</option>
+          <option value="multipart_stream">multipart_stream</option>
+          <option value="chunk/final_data">chunk/final_data (reassembled)</option>
+          <option value="resumable/final_data">resumable/final_data (reassembled)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="strategy">Stream strategy</label>
+        <select id="strategy">
+          <option value="/video/basic/stream/v1">Basic — buffered (whole file in server RAM, Content-Length)</option>
+          <option value="/video/chunk/stream/v1">Chunk stream — Transfer-Encoding: chunked (flat server memory)</option>
+          <option value="/video/rangereq/stream/v1">HTTP Range — 206 Partial Content (fetch byte windows, reassemble)</option>
+        </select>
+        <p class="note">Basic &amp; Chunk return the whole file in one response (identical display; they differ server-side — buffered vs. streamed 64&nbsp;KB at a time, <code>Content-Length</code> vs. <code>Transfer-Encoding: chunked</code>). <b>HTTP Range</b> instead runs an init request for the total size, then pulls the file in <code>Range: bytes=start-end</code> windows — each answered <code>206 Partial Content</code> — and stitches them back together. All three now take <code>fileName</code>/<code>uploadType</code> as query params.</p>
+      </div>
+
+      <div class="field">
+        <label for="fileName">File name</label>
+        <input id="fileName" type="text" placeholder="e.g. 18be72f5b9d605c1436346a166619361.jpg" />
+        <p class="note">The exact file name written to disk (with extension). It's returned as <code>filePath</code> by the upload endpoints.</p>
+      </div>
+
+      <button id="go" class="go" type="button">Load &amp; display</button>
+
+      <div id="status" class="status">
+        <span id="badge" class="badge"></span>
+        <pre id="out"></pre>
+      </div>
+    </div>
+
+    <div id="viewer" class="viewer card">
+      <div class="stage" id="stage"></div>
+      <div class="meta">
+        <span>name <span class="v" id="v-name">—</span></span>
+        <span>type <span class="v" id="v-type">—</span></span>
+        <span>size <span class="v" id="v-size">—</span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    // The endpoint path comes from the Stream strategy <select>:
+    //   /video/basic/stream/v1  — buffered whole file
+    //   /video/chunk/stream/v1  — chunked whole file
+    //   /video/rangereq/stream/v1 — Range window serving (206). Preceded by a
+    //     separate init request to /video/rangereq/init/stream/v1 for the size.
+    // All three take fileName/uploadType as QUERY params (the backend uses
+    // Query<VideoStreamRequest>, not a JSON body).
+    const RANGE_PATH = "/video/rangereq/stream/v1";
+    const RANGE_INIT_PATH = "/video/rangereq/init/stream/v1";
+
+    // Keep a handle to the last object URL so we can revoke it and not leak
+    // memory each time a new file is displayed.
+    let currentObjectUrl = null;
+
+    // Infer a MIME type from the file extension. The stream endpoint returns
+    // raw bytes with no content type, so we mirror the server's
+    // mime_to_extension() map (see src/utils/common.rs) in reverse.
+    const EXT_TO_MIME = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      pdf: "application/pdf",
+      mp4: "video/mp4",
+      mov: "video/quicktime",
+    };
+
+    const extOf = (name) => {
+      const i = name.lastIndexOf(".");
+      return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+    };
+    const mimeOf = (name) => EXT_TO_MIME[extOf(name)] || "application/octet-stream";
+
+    const fmtBytes = (n) => {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1024 / 1024).toFixed(2) + " MB";
+    };
+
+    const setStatus = (kind, badge, text) => {
+      $("status").classList.add("show");
+      $("badge").className = "badge " + kind;
+      $("badge").textContent = badge;
+      $("out").textContent = text || "";
+      if (!text) $("out").textContent = "";
+    };
+
+    $("go").addEventListener("click", loadFile);
+    $("fileName").addEventListener("keydown", (e) => { if (e.key === "Enter") loadFile(); });
+
+    async function loadFile() {
+      const base = $("base").value.trim().replace(/\/$/, "");
+      const uploadType = $("uploadType").value;
+      const fileName = $("fileName").value.trim();
+      const path = $("strategy").value; // selected stream endpoint
+
+      if (!fileName) {
+        setStatus("err", "✗ missing file name", "Enter the file name to display.");
+        return;
+      }
+
+      // fileName/uploadType ride in the query string. camelCase keys match the
+      // server's #[serde(rename_all = "camelCase")] on VideoStreamRequest.
+      const qs = new URLSearchParams({ fileName, uploadType }).toString();
+      const url = base + path + "?" + qs;
+
+      $("go").disabled = true;
+      $("viewer").classList.remove("show");
+
+      try {
+        if (path === RANGE_PATH) {
+          loadRangeNative(url, fileName, path);
+        } else {
+          await loadWhole(url, fileName, path);
+        }
+      } catch (e) {
+        setStatus("err", "✗ failed",
+          "Network/CORS error — the request never reached the server.\n\n" +
+          "If this page is NOT served by axum, the browser blocks cross-origin requests unless the server sends CORS headers.\n\n" +
+          (e && e.message ? e.message : e));
+      } finally {
+        $("go").disabled = false;
+      }
+    }
+
+    // Basic & Chunk: one request, whole file back as raw bytes.
+    async function loadWhole(url, fileName, path) {
+      setStatus("load", "… loading", "Requesting " + fileName + "\nvia POST " + path);
+      const res = await fetch(url, { method: "POST" });
+
+      if (!res.ok) {
+        // Errors are still plain-text bodies from the server.
+        const raw = await res.text();
+        let msg = raw;
+        try { msg = JSON.stringify(JSON.parse(raw), null, 2); } catch (_) {}
+        setStatus("err", "✗ " + res.status, msg || "(empty response)");
+        return;
+      }
+
+      // The endpoint returns the file's RAW bytes as the body with a
+      // Content-Type header (no JSON envelope). res.blob() reads the body
+      // directly and picks up that Content-Type as blob.type.
+      const blob = await res.blob();
+      // Prefer the server's Content-Type; fall back to guessing from the name.
+      const type = blob.type || mimeOf(fileName);
+
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = URL.createObjectURL(blob);
+
+      render(type, currentObjectUrl, fileName, blob.size);
+      setStatus("ok", "✓ 200 OK", "Loaded " + fmtBytes(blob.size) + " · " + type + "\nvia POST " + path);
+    }
+
+    // HTTP Range (Option A — native, on-demand). Point a plain <video> straight
+    // at the GET range endpoint and let the BROWSER drive it: it opens with
+    // `Range: bytes=0-`, plays as soon as enough arrives, stops fetching when its
+    // buffer is full (backpressure), requests the next window as the playhead
+    // advances, and on seek fetches the range around the seek target. No manual
+    // loop, no full-file download, no Blob. This is why the endpoint moved to GET
+    // (see WHY WE MIGRATED below) — media elements only issue bodyless GETs.
+    function loadRangeNative(url, fileName, path) {
+      const type = mimeOf(fileName) || "video/mp4";
+      // src is the endpoint URL itself (not an object URL). Every byte the player
+      // needs is pulled on demand as Range requests against `url`.
+      if (currentObjectUrl) { URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
+      render(type, url, fileName, null);
+      $("v-size").textContent = "streamed on demand (Range)";
+      setStatus("ok", "✓ streaming",
+        "Native playback — the browser issues Range requests against\nGET " + path +
+        " on demand (open, buffer-ahead, seek).\nWatch the Network tab: you'll see multiple 206 Partial Content responses.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // WHY WE MIGRATED FROM POST → GET FOR THE RANGE ENDPOINT
+    //
+    // The previous approach (below, kept for reference) drove the range endpoint
+    // over POST from JS: it ran an init request for the total size, then LOOPED
+    // `Range: bytes=start-end` windows across the WHOLE file, collected every 206
+    // body, concatenated them into one Blob, and only then played it.
+    //
+    // That works as a 206 *test*, but it's not streaming: it downloads the entire
+    // file before playback starts — defeating the whole point of ranges (fast
+    // start, seek-anywhere, don't fetch what you don't watch). The reason it had
+    // to fetch everything is the Blob: a Blob is a fixed, complete byte buffer, so
+    // you must have all bytes before you can hand one to <video>.
+    //
+    // A native <video src> does on-demand ranges for free — but media elements
+    // only issue bodyless GETs, so they can't reach a POST endpoint. Hence the
+    // migration: the byte-serving route is now GET, <video> points straight at
+    // it, and the browser manages fetch-ahead / backpressure / seek itself. The
+    // init endpoint is no longer needed for playback (the browser learns the size
+    // from the 206's Content-Range). The old code:
+    //
+    // async function loadViaRanges(base, qs, fileName) {
+    //   const WINDOW = 1024 * 1024; // 1 MiB per range request
+    //   const initUrl = base + RANGE_INIT_PATH + "?" + qs;
+    //   const rangeUrl = base + RANGE_PATH + "?" + qs;
+    //   const init = await fetch(initUrl, { method: "POST" });
+    //   if (!init.ok) { /* show error */ return; }
+    //   const total = Number(init.headers.get("x-content-length")); // size via custom header
+    //   const type = init.headers.get("content-type") || mimeOf(fileName);
+    //   if (!total) { /* CORS: expose X-Content-Length */ return; }
+    //   const parts = [];
+    //   for (let start = 0; start < total; start += WINDOW) {
+    //     const end = Math.min(start + WINDOW - 1, total - 1);
+    //     const res = await fetch(rangeUrl, { method: "POST", headers: { Range: `bytes=${start}-${end}` } });
+    //     if (res.status !== 206) { /* endpoint not honouring Range yet */ return; }
+    //     parts.push(await res.arrayBuffer()); // buffer the whole file in memory
+    //   }
+    //   const blob = new Blob(parts, { type });           // needs ALL bytes first
+    //   currentObjectUrl = URL.createObjectURL(blob);
+    //   render(type, currentObjectUrl, fileName, blob.size);
+    // }
+    // ─────────────────────────────────────────────────────────────────────
+
+    function render(type, url, name, size) {
+      const stage = $("stage");
+      stage.innerHTML = "";
+
+      let el;
+      if (type.startsWith("image/")) {
+        el = document.createElement("img");
+        el.src = url;
+        el.alt = name;
+      } else if (type.startsWith("video/")) {
+        el = document.createElement("video");
+        el.src = url;
+        el.controls = true;
+        el.autoplay = false;
+        el.playsInline = true;
+      } else if (type === "application/pdf") {
+        el = document.createElement("iframe");
+        el.src = url;
+        el.title = name;
+      } else {
+        // Fallback: offer a download link for unknown types.
+        el = document.createElement("a");
+        el.href = url;
+        el.download = name;
+        el.textContent = "Download " + name;
+        el.style.color = "var(--accent)";
+      }
+      stage.appendChild(el);
+
+      $("v-name").textContent = name;
+      $("v-type").textContent = type;
+      $("v-size").textContent = fmtBytes(size);
+      $("viewer").classList.add("show");
+    }
+  </script>
+</body>
+</html>

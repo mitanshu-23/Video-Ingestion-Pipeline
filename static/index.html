@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Ingestion · Upload Tester</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #8b93a3;
+      --accent: #5b8cff;
+      --accent-2: #3b6ef0;
+      --ok: #3ecf8e;
+      --err: #ff6b6b;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .drop {
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .drop.drag { border-color: var(--accent); background: rgba(91,140,255,.06); }
+    .drop strong { color: var(--accent); }
+    .drop .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .file-meta {
+      display: none;
+      margin-top: 16px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+    .file-meta.show { display: block; }
+    .file-meta .row { display: flex; justify-content: space-between; gap: 12px; }
+    .file-meta .row + .row { margin-top: 4px; }
+    .file-meta .k { color: var(--muted); }
+    .file-meta .v { font-family: ui-monospace, Menlo, monospace; text-align: right; word-break: break-all; }
+    .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+    @media (max-width: 560px) { .modes { grid-template-columns: 1fr; } }
+    .mode {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .mode.active { border-color: var(--accent); background: rgba(91,140,255,.08); }
+    .mode h3 { margin: 0 0 4px; font-size: 14px; }
+    .mode p { margin: 0; font-size: 12px; color: var(--muted); }
+    .mode .path { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--accent); margin-top: 6px; word-break: break-all; }
+    button.go {
+      width: 100%;
+      margin-top: 18px;
+      background: var(--accent-2);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    button.go:hover { background: var(--accent); }
+    button.go:disabled { opacity: .45; cursor: not-allowed; }
+    .progress { display: none; margin-top: 16px; }
+    .progress.show { display: block; }
+    .bar { height: 8px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .1s linear; }
+    .progress .stat { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .result { display: none; margin-top: 16px; }
+    .result.show { display: block; }
+    .result .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 8px; }
+    .result .badge.ok { background: rgba(62,207,142,.15); color: var(--ok); }
+    .result .badge.err { background: rgba(255,107,107,.15); color: var(--err); }
+    pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    code { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Video Ingestion · Upload Tester</h1>
+    <p class="sub">A browser harness for the axum upload endpoints — pick a file, choose a strategy, watch the upload progress. Uploaded a file? <a href="stream.html" style="color:var(--accent)">View it in the Stream Viewer →</a></p>
+
+    <div class="card">
+      <label for="base">API base URL</label>
+      <input id="base" type="text" value="" placeholder="(blank = same origin)" />
+      <p class="note">Leave blank when this page is served by the axum server itself. Set to <code>http://localhost:3000</code> only if you open this file standalone <em>and</em> the server sends CORS headers.</p>
+    </div>
+
+    <div class="card">
+      <div id="drop" class="drop">
+        <div>Drop a video here or <strong>browse</strong></div>
+        <div class="hint">mp4 / mov · images · pdf — up to 50&nbsp;MB</div>
+        <input id="file" type="file" hidden />
+      </div>
+      <div id="meta" class="file-meta">
+        <div class="row"><span class="k">name</span><span class="v" id="m-name">—</span></div>
+        <div class="row"><span class="k">type</span><span class="v" id="m-type">—</span></div>
+        <div class="row"><span class="k">size</span><span class="v" id="m-size">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Upload strategy</label>
+      <div class="modes" id="modes">
+        <div class="mode active" data-mode="basic" data-path="/video/basic/upload/v1">
+          <h3>Basic</h3>
+          <p>Raw body. Server buffers the whole file in memory.</p>
+          <div class="path">POST /video/basic/upload/v1</div>
+        </div>
+        <div class="mode" data-mode="multipart" data-path="/video/multipart/upload/v1">
+          <h3>Multipart</h3>
+          <p>multipart/form-data with the file part + filename.</p>
+          <div class="path">POST /video/multipart/upload/v1</div>
+        </div>
+        <div class="mode" data-mode="stream" data-path="/video/stream/upload/v1">
+          <h3>Stream</h3>
+          <p>Raw body, streamed to disk server-side.</p>
+          <div class="path">POST /video/stream/upload/v1</div>
+        </div>
+        <div class="mode" data-mode="multipart-stream" data-path="/video/multipart/stream/upload/v1">
+          <h3>Multipart Stream</h3>
+          <p>multipart/form-data, streamed field-by-field to disk server-side.</p>
+          <div class="path">POST /video/multipart/stream/upload/v1</div>
+        </div>
+        <div class="mode" data-mode="chunked" data-init="/video/chunked/init/upload/v1" data-path="/video/chunked/upload">
+          <h3>Chunked (waiting)</h3>
+          <p>Inits a transfer with totalChunks + contentType to get an uploadId, then sends raw binary chunks sequentially with just the chunkIndex query param.</p>
+          <div class="path">POST /video/chunked/init/upload/v1 → /video/chunked/upload</div>
+        </div>
+        <div class="mode" data-mode="resumable" data-init="/video/resumable/init/upload/v1" data-status="/video/resumable/status/v1" data-path="/video/resumable/upload/v1">
+          <h3>Resumable</h3>
+          <p>Remembers the uploadId in localStorage, asks the server which chunks it already has, and sends only the missing ones. The Upload button becomes <strong>Pause</strong> mid-transfer — hit it to stop, then <strong>Resume</strong> to pick up where you left off.</p>
+          <div class="path">POST init → GET status → POST /video/resumable/upload/v1</div>
+        </div>
+      </div>
+
+      <button id="go" class="go" type="button" disabled>Upload</button>
+
+      <div id="progress" class="progress">
+        <div class="bar"><i id="bar"></i></div>
+        <div class="stat"><span id="pct">0%</span><span id="rate">—</span></div>
+      </div>
+
+      <div id="result" class="result">
+        <span id="badge" class="badge"></span>
+        <pre id="out"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MAX = 50 * 1024 * 1024;
+    let file = null;
+    let mode = "basic";
+
+    // Resumable pause/resume state. The Upload button doubles as Pause/Resume
+    // while a resumable transfer is in flight.
+    let resumableUploading = false; // a resumable run is currently sending chunks
+    let resumablePaused = false;    // user asked to pause; loop stops + aborts in-flight chunk
+    let resumableAbort = null;      // AbortController for the current chunk fetch
+    const setGoLabel = (t) => { $("go").textContent = t; };
+
+    const $ = (id) => document.getElementById(id);
+    const fmtBytes = (n) => {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1024 / 1024).toFixed(2) + " MB";
+    };
+
+    // Stop the browser from navigating to a file dropped anywhere on the page.
+    // Without this, a drop that misses the dashed zone opens the file and the
+    // page appears to "reload".
+    ["dragover", "drop"].forEach((e) =>
+      window.addEventListener(e, (ev) => ev.preventDefault())
+    );
+
+    // --- file selection (click + drag/drop) ---
+    const drop = $("drop"), fileInput = $("file");
+    drop.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+    ["dragenter", "dragover"].forEach((e) =>
+      drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("drag"); })
+    );
+    ["dragleave", "drop"].forEach((e) =>
+      drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("drag"); })
+    );
+    drop.addEventListener("drop", (ev) => setFile(ev.dataTransfer.files[0]));
+
+    function setFile(f) {
+      if (!f) return;
+      file = f;
+      $("m-name").textContent = f.name;
+      $("m-type").textContent = f.type || "(unknown)";
+      $("m-size").textContent = fmtBytes(f.size) + (f.size > MAX ? "  ⚠ over 50MB limit" : "");
+      $("meta").classList.add("show");
+      $("go").disabled = false;
+    }
+
+    // --- mode selection ---
+    document.querySelectorAll(".mode").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".mode").forEach((m) => m.classList.remove("active"));
+        el.classList.add("active");
+        mode = el.dataset.mode;
+        // Leaving resumable mid-transfer: pause it and reset the button label so
+        // the Pause/Resume text doesn't leak into other strategies.
+        if (mode !== "resumable" && resumableUploading) {
+          resumablePaused = true;
+          if (resumableAbort) resumableAbort.abort();
+        }
+        setGoLabel("Upload");
+      });
+    });
+
+    // --- upload ---
+    $("go").addEventListener("click", (ev) => {
+      ev.preventDefault();
+
+      // Resumable turns the Upload button into a Pause/Resume toggle:
+      //  - while a run is in flight  → clicking pauses (stops the loop + aborts
+      //    the in-flight chunk, keeping the localStorage entry)
+      //  - while idle/paused         → clicking (re)starts, which re-probes the
+      //    server for the chunks it already has and sends only the rest
+      if (mode === "resumable") {
+        if (resumableUploading) {                 // in flight → pause
+          resumablePaused = true;
+          if (resumableAbort) resumableAbort.abort();
+          return;
+        }
+        if (!file) return;
+        const base = $("base").value.trim().replace(/\/$/, "");
+        uploadResumable(base);                    // start or resume
+        return;
+      }
+
+      if (!file) return;
+      const base = $("base").value.trim().replace(/\/$/, "");
+      const path = document.querySelector(".mode.active").dataset.path;
+      const url = base + path;
+
+      // Chunked is an init-then-many-requests flow — handled separately from
+      // the single-shot XHR used by the other strategies.
+      if (mode === "chunked") { uploadChunked(base); return; }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+
+      // progress UI
+      $("progress").classList.add("show");
+      $("result").classList.remove("show");
+      $("go").disabled = true;
+      $("bar").style.width = "0%";
+      $("pct").textContent = "0%";
+      const started = performance.now();
+
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const p = Math.round((e.loaded / e.total) * 100);
+        $("bar").style.width = p + "%";
+        $("pct").textContent = p + "%  (" + fmtBytes(e.loaded) + " / " + fmtBytes(e.total) + ")";
+        const secs = (performance.now() - started) / 1000;
+        if (secs > 0) $("rate").textContent = fmtBytes(e.loaded / secs) + "/s";
+      };
+
+      xhr.onload = () => finish(xhr.status, xhr.responseText);
+      xhr.onerror = () =>
+        finish(0, "Network/CORS error — the request never reached the server.\n\nIf this page is NOT served by axum, the browser blocks cross-origin POSTs unless the server sends CORS headers.");
+      xhr.ontimeout = () => finish(0, "Request timed out.");
+
+      let body;
+      if (mode === "multipart" || mode === "multipart-stream") {
+        body = new FormData();
+        body.append("file", file, file.name); // backend reads the part's filename as `name`
+        // multipart sets its own Content-Type boundary — don't set it manually
+      } else {
+        // basic + stream both send the raw file as the body
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        body = file;
+      }
+      xhr.send(body);
+    });
+
+    // --- chunked upload ---
+    // Two-phase: first POST the init endpoint with the totalChunks the client
+    // commits to (the server stores it as the fixed completion target and
+    // returns an uploadId), then slice the file into fixed-size chunks and POST
+    // each as a RAW BINARY body with just the uploadId/chunkIndex query params.
+    // Requests are awaited in sequence — the server processes one chunk before
+    // the next is sent ("waiting").
+    async function uploadChunked(base) {
+      const CHUNK = 4 * 1024 * 1024; // 4 MB of binary per chunk
+      const initUrl = base + document.querySelector(".mode.active").dataset.init;
+      const uploadUrl = base + document.querySelector(".mode.active").dataset.path;
+      const contentType = file.type || "application/octet-stream";
+
+      $("progress").classList.add("show");
+      $("result").classList.remove("show");
+      $("go").disabled = true;
+      $("bar").style.width = "0%";
+      $("pct").textContent = "0%";
+      const started = performance.now();
+
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+      let lastText = "";
+
+      try {
+        // 1. init — declare totalChunks AND the file's MIME type up front, then
+        //    obtain the uploadId the server keys this transfer on. contentType is
+        //    pinned here: the server validates it and derives the file extension
+        //    from it, and every chunk is checked against it.
+        const initRes = await fetch(initUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ totalChunks, contentType }),
+        });
+        const initText = await initRes.text();
+        if (!initRes.ok) { finish(initRes.status, initText); return; }
+        const uploadId = JSON.parse(initText).uploadId;
+
+        // 2. send each chunk as a raw binary body, one at a time. totalChunks is
+        //    no longer sent per chunk — it was fixed at init.
+        for (let index = 0; index < totalChunks; index++) {
+          const offset = index * CHUNK;
+          const end = Math.min(offset + CHUNK, file.size);
+          const blob = file.slice(offset, end); // raw bytes — no base64/JSON wrapping
+
+          const query = new URLSearchParams({ uploadId, chunkIndex: index });
+          const res = await fetch(uploadUrl + "?" + query.toString(), {
+            method: "POST",
+            headers: { "Content-Type": contentType },
+            body: blob,
+          });
+          lastText = await res.text();
+          if (!res.ok) { finish(res.status, lastText); return; }
+
+          const p = Math.round((end / file.size) * 100);
+          $("bar").style.width = p + "%";
+          $("pct").textContent = p + "%  (" + fmtBytes(end) + " / " + fmtBytes(file.size) + ")";
+          const secs = (performance.now() - started) / 1000;
+          if (secs > 0) $("rate").textContent = fmtBytes(end / secs) + "/s";
+        }
+        finish(200, lastText);
+      } catch (e) {
+        finish(0, "Network/CORS error during chunked upload — " + (e && e.message ? e.message : e));
+      }
+    }
+
+    // --- resumable upload ---
+    // Like chunked, but the client keeps enough state to survive an
+    // interruption (a dropped connection, or the tab being reloaded mid-upload):
+    //   1. A stable key derived from the file (name+size+lastModified) maps to
+    //      the server's uploadId in localStorage, so re-selecting the same file
+    //      continues the same transfer instead of minting a new one.
+    //   2. Before sending, it GETs the status endpoint to learn which chunk
+    //      indices the server already stored, and skips those.
+    //   3. On a mid-upload failure it leaves the localStorage entry in place, so
+    //      clicking Upload again resumes. On completion it clears the entry.
+    // NOTE: this resumes across a *client* interruption. It cannot resume across
+    // a *server* restart yet — the server keeps transfer state in memory, so a
+    // restart makes the uploadId unknown (status returns 404) and the client
+    // falls back to a fresh transfer.
+    async function uploadResumable(base) {
+      const CHUNK = 4 * 1024 * 1024; // must match across resumes so indices line up
+      const modeEl = document.querySelector(".mode.active");
+      const initUrl = base + modeEl.dataset.init;
+      const statusUrl = base + modeEl.dataset.status;
+      const uploadUrl = base + modeEl.dataset.path;
+      const contentType = file.type || "application/octet-stream";
+
+      $("progress").classList.add("show");
+      $("result").classList.remove("show");
+      // Button stays enabled and flips to "Pause" — the user drives pause/resume
+      // through it while chunks are in flight.
+      resumableUploading = true;
+      resumablePaused = false;
+      $("go").disabled = false;
+      setGoLabel("Pause");
+      const started = performance.now();
+
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+      // Stable per-file key so a reload/re-selection maps back to the same transfer.
+      const storeKey = "resumable:" + file.name + ":" + file.size + ":" + file.lastModified;
+
+      const setProgress = (doneChunks) => {
+        const p = Math.round((doneChunks / totalChunks) * 100);
+        $("bar").style.width = p + "%";
+        const doneBytes = Math.min(doneChunks * CHUNK, file.size);
+        $("pct").textContent = p + "%  (" + fmtBytes(doneBytes) + " / " + fmtBytes(file.size) + ")";
+        const secs = (performance.now() - started) / 1000;
+        if (secs > 0) $("rate").textContent = fmtBytes(doneBytes / secs) + "/s";
+      };
+
+      try {
+        // 1. Resolve an uploadId + the set of chunks the server already holds.
+        let uploadId = localStorage.getItem(storeKey);
+        let received = new Set();
+
+        if (uploadId) {
+          // Ask the server what it already has for this transfer.
+          const query = new URLSearchParams({ uploadId });
+          const statusRes = await fetch(statusUrl + "?" + query.toString());
+          if (statusRes.ok) {
+            const status = await statusRes.json();
+            (status.receivedChunks || []).forEach((i) => received.add(i));
+            console.info("resumable: resuming " + uploadId + " — server has " + received.size + "/" + totalChunks + " chunks");
+          } else {
+            // 404 = unknown/completed/expired (e.g. after a server restart).
+            // Drop the stale id and start fresh below.
+            console.info("resumable: stored uploadId " + uploadId + " is stale (HTTP " + statusRes.status + "); starting fresh");
+            localStorage.removeItem(storeKey);
+            uploadId = null;
+          }
+        }
+
+        // 2. No usable transfer yet — init one and remember its id.
+        if (!uploadId) {
+          const initRes = await fetch(initUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ totalChunks, contentType }),
+          });
+          const initText = await initRes.text();
+          if (!initRes.ok) { finish(initRes.status, initText); return; }
+          uploadId = JSON.parse(initText).uploadId;
+          localStorage.setItem(storeKey, uploadId);
+        }
+
+        setProgress(received.size);
+
+        // 3. Send only the chunks the server is missing.
+        let lastText = "";
+        for (let index = 0; index < totalChunks; index++) {
+          if (received.has(index)) continue; // already on the server — skip
+          if (resumablePaused) break;         // user hit Pause between chunks
+
+          const offset = index * CHUNK;
+          const end = Math.min(offset + CHUNK, file.size);
+          const blob = file.slice(offset, end);
+
+          const query = new URLSearchParams({ uploadId, chunkIndex: index });
+          let res;
+          resumableAbort = new AbortController();
+          try {
+            res = await fetch(uploadUrl + "?" + query.toString(), {
+              method: "POST",
+              headers: { "Content-Type": contentType },
+              body: blob,
+              signal: resumableAbort.signal, // Pause aborts the in-flight chunk
+            });
+          } catch (e) {
+            if (resumablePaused) break;        // abort was our own Pause — not an error
+            throw e;                            // genuine network failure → outer catch
+          }
+          lastText = await res.text();
+          if (!res.ok) {
+            // Leave the localStorage entry so the next click resumes here.
+            resumableUploading = false;
+            setGoLabel("Resume");
+            finish(res.status, lastText + "\n\n(resumable: transfer " + uploadId + " kept — click Resume to continue)");
+            return;
+          }
+          received.add(index);
+          setProgress(received.size);
+        }
+
+        // Paused mid-transfer: keep everything on the client, flip the button to
+        // Resume, and leave the localStorage entry so the next click picks up here.
+        if (resumablePaused) {
+          resumableUploading = false;
+          setGoLabel("Resume");
+          const done = received.size, pct = Math.round((done / totalChunks) * 100);
+          finish(200, "⏸ Paused at " + done + "/" + totalChunks + " chunks (" + pct + "%).\n\nTransfer " + uploadId + " kept — click Resume to continue.");
+          $("badge").textContent = "⏸ paused";
+          $("badge").className = "badge";
+          return;
+        }
+
+        // 4. All chunks are on the server; the transfer won't be resumed again.
+        localStorage.removeItem(storeKey);
+        resumableUploading = false;
+        setGoLabel("Upload");
+        finish(200, lastText || "(all chunks uploaded)");
+      } catch (e) {
+        // Network drop / tab offline: keep the localStorage entry so a retry resumes.
+        resumableUploading = false;
+        setGoLabel("Resume");
+        finish(0, "Network/CORS error during resumable upload — " + (e && e.message ? e.message : e) + "\n\n(transfer state kept — click Resume to continue)");
+      }
+    }
+
+    function finish(status, text) {
+      $("go").disabled = false;
+      const ok = status >= 200 && status < 300;
+      $("badge").className = "badge " + (ok ? "ok" : "err");
+      $("badge").textContent = ok ? "✓ " + status + " OK" : (status ? "✗ " + status : "✗ failed");
+      let pretty = text;
+      try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+      $("out").textContent = pretty || "(empty response)";
+      $("result").classList.add("show");
+    }
+  </script>
+</body>
+</html>
