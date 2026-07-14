@@ -2,6 +2,7 @@ mod healthcheck;
 mod routes;
 mod utils;
 mod video_upload;
+mod video_stream;
 
 #[tokio::main]
 async fn main() {
