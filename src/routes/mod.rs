@@ -4,7 +4,7 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::{
     healthcheck::health_check_routes,
     prometheus::{HTTP_REQUEST_DURATION, HTTP_REQUESTS_TOTAL, get_metrics_route},
-    video_stream::stream_routes,
+    // video_stream::stream_routes,
     video_upload::video_routes,
 };
 
@@ -16,7 +16,7 @@ pub fn get_all_routes() -> Router {
     // response headers cross-origin (e.g. the range init's X-Content-Length).
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any).expose_headers(Any);
 
-    Router::new().merge(health_check_routes()).merge(video_routes()).merge(get_metrics_route()).merge(stream_routes()).layer(middleware::from_fn(metrics_middleware)).layer(cors)
+    Router::new().merge(health_check_routes()).merge(video_routes()).merge(get_metrics_route()).layer(middleware::from_fn(metrics_middleware)).layer(cors)
 }
 
 async fn metrics_middleware(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {

@@ -24,7 +24,7 @@ pub fn video_routes() -> Router {
         // Each chunk arrives as a base64 JSON body, which inflates the raw
         // bytes by ~33% and would otherwise trip the default 2 MB limit.
         .route("/video/chunked/init/upload/v1", post(video_service::upload_chunked_init_svc).layer(DefaultBodyLimit::disable()))
-        .route("/video/chunked/upload", post(video_service::upload_chunked_svc).layer(DefaultBodyLimit::disable()))
+        .route("/video/chunked/upload/v1", post(video_service::upload_chunked_svc).layer(DefaultBodyLimit::disable()))
         .route("/video/resumable/init/upload/v1", post(video_service::upload_resumable_init_svc).layer(DefaultBodyLimit::disable()))
         // Progress query the client hits before (re)sending chunks so an
         // interrupted upload resumes from the missing chunks instead of chunk 0.
